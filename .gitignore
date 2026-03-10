@@ -1,0 +1,12 @@
+# Data folders
+data/
+
+# Environment variables
+.env
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# VS Code settings
+.vscode/
