@@ -1,4 +1,4 @@
-# DIME — Dimension-Importance Masked Embeddings
+# DIME — Dimension-Importance Estimation
 
 DIME is a research framework for **dimension-selective dense retrieval**. Instead of searching with a full-dimensional query embedding, DIME computes a per-query importance score over every embedding dimension and masks (or weights) out the less informative ones before querying a FAISS index. This enables controlled experiments over how much of the embedding space is actually needed for effective retrieval.
 
