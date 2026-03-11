@@ -2,11 +2,11 @@
 
 from src.dime.filters.base import DimeFilter
 from src.dime.filters.prf import PRFFilter
+from src.dime.filters.gpt import GPTFilter
 
-# OracularFilter is imported lazily in the pipeline to avoid requiring
-# qrels at import time, but it is exported here for direct library use.
+# OracularFilter requires qrels so it is only imported when available
 try:
     from src.dime.filters.oracular import OracularFilter
-    __all__ = ["DimeFilter", "PRFFilter", "OracularFilter"]
+    __all__ = ["DimeFilter", "PRFFilter", "GPTFilter", "OracularFilter"]
 except ImportError:
-    __all__ = ["DimeFilter", "PRFFilter"]
+    __all__ = ["DimeFilter", "PRFFilter", "GPTFilter"]

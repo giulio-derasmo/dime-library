@@ -7,6 +7,7 @@ DATA_DIR    = ROOT_DIR / "data"
 MEMMAPS_DIR  = DATA_DIR / "memmaps"
 INDICES_DIR  = DATA_DIR / "vectordb"
 RUNS_DIR = DATA_DIR / "runs"
+GPT_DIR = DATA_DIR / "gpt"
 
 # ── Models ─────────────────────────────────────────────────────────────────────
 MODEL_TO_HF = {

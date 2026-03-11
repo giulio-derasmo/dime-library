@@ -89,6 +89,14 @@ def build_filter(args, filter_cfg, qrys_encoder, qrels):
         )
     if args.filter == "oracular":
         pass
+    if args.filter == "gpt":
+        from src.dime.filters import GPTFilter
+        return GPTFilter(
+            qrys_encoder=qrys_encoder,
+            model_name=args.model,
+            collection=args.collection,
+            variant=filter_cfg["variant"],   # from your YAML config
+        )
     raise ValueError(f"Unknown filter: {args.filter}")
 
 
