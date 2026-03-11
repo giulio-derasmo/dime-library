@@ -54,9 +54,9 @@
 #   python src/report.py --table sweep \
 #       --models ance contriever tasb \
 #       --collections dl19 dl20 \
-#       --filter prf-k2 --selector top-alpha \
+#       --filters prf-k2 oracular --selector top-alpha \
 #       --alphas 0.2 0.4 0.6 0.8 1.0 \
-#       --measures nDCG@10 AP
+#       --measures nDCG@10
 #
 #   python src/report.py --table retained \
 #       --models ance contriever tasb \
@@ -231,6 +231,53 @@ def _table_wrap(
     ])
 
 
+def _chunk(seq: Sequence, size: int) -> list[list]:
+    """Split a sequence into consecutive chunks of at most `size` elements."""
+    seq = list(seq)
+    return [seq[i : i + size] for i in range(0, len(seq), size)]
+
+
+def _table_wrap_grid(
+    chunks_lines: list[list[str]],
+    col_specs: list[str] | str,
+    caption: str,
+    label: str,
+    wide: bool = False,
+) -> str:
+    """
+    Wrap multiple tabular blocks (one per collection chunk) inside a single
+    table environment.  Each block is separated by a small vertical skip.
+
+    Every chunk is wrapped in makebox so it is always horizontally centred
+    to the full text width, regardless of how many collections it contains.
+    """
+    if isinstance(col_specs, str):
+        col_specs = [col_specs] * len(chunks_lines)
+
+    env = "table*" if wide else "table"
+    parts: list[str] = [
+        rf"\begin{{{env}}}[t]",
+        r"\centering",
+        r"\small",
+    ]
+    for i, (body_lines, cs) in enumerate(zip(chunks_lines, col_specs)):
+        parts.append(rf"\makebox[\linewidth][c]{{%")
+        parts += [
+            rf"\begin{{tabular}}{{{cs}}}",
+            *body_lines,
+            r"\end{tabular}",
+        ]
+        parts.append(r"}")
+        if i < len(chunks_lines) - 1:
+            parts.append(r"\par\vspace{6pt}")
+    parts += [
+        rf"\caption{{{caption}}}",
+        rf"\label{{{label}}}",
+        rf"\end{{{env}}}",
+    ]
+    return "\n".join(parts)
+
+
 def _best_indices(values: list[float | None]) -> set[int]:
     """Return the indices of the maximum value(s) in a list, ignoring Nones."""
     valid = [(v, i) for i, v in enumerate(values) if v is not None]
@@ -283,8 +330,8 @@ def table_performance(
     n_coll    = len(collections)
     n_subrows = len(filter_tags) + (1 if include_baseline else 0)
 
-    # column spec: ll | (c...c) per collection
-    col_spec = "ll" + "".join(["|" + "c" * n_meas] * n_coll)
+    # column spec: ll | (c...c) per collection — used per chunk
+    COLS_PER_ROW = 2
 
     # ── pre-load all data ──────────────────────────────────────────────────────
     # data[collection][model][filter_tag][measure] = mean_value | None
@@ -327,62 +374,71 @@ def table_performance(
             s = _bold(s)
         return s
 
-    # ── build lines ───────────────────────────────────────────────────────────
-    lines: list[str] = []
-    lines.append(r"\toprule")
+    def _build_chunk(chunk_colls: list[str]) -> list[str]:
+        n_chunk = len(chunk_colls)
+        lines: list[str] = []
+        lines.append(r"\toprule")
 
-    # header row 1 — collection names
-    coll_headers = " & ".join(
-        _multicolumn(n_meas, "c", COLLECTION_DISPLAY.get(c, c))
-        for c in collections
-    )
-    lines.append(rf"Model & Filter & {coll_headers} \\")
+        # header row 1 — collection names
+        coll_headers = " & ".join(
+            _multicolumn(n_meas, "c", COLLECTION_DISPLAY.get(c, c))
+            for c in chunk_colls
+        )
+        lines.append(rf"Model & Filter & {coll_headers} \\")
 
-    # header row 2 — measure names repeated per collection, with cmidrules
-    cmidrules = " ".join(
-        _cmidrule(3 + i * n_meas, 2 + (i + 1) * n_meas)
-        for i in range(n_coll)
-    )
-    lines.append(cmidrules)
-    meas_header = " & ".join(list(measures) * n_coll)
-    lines.append(rf" & & {meas_header} \\")
-    lines.append(r"\midrule")
+        # header row 2 — measure names repeated per collection, with cmidrules
+        cmidrules = " ".join(
+            _cmidrule(3 + i * n_meas, 2 + (i + 1) * n_meas)
+            for i in range(n_chunk)
+        )
+        lines.append(cmidrules)
+        meas_header = " & ".join(list(measures) * n_chunk)
+        lines.append(rf" & & {meas_header} \\")
+        lines.append(r"\midrule")
 
-    # body — one row-group per model
-    for m_idx, model in enumerate(models):
-        model_display = MODEL_DISPLAY.get(model, model)
+        for m_idx, model in enumerate(models):
+            model_display = MODEL_DISPLAY.get(model, model)
 
-        for f_idx, ft in enumerate(filter_tags):
-            filter_display = FILTER_DISPLAY.get(ft, ft)
-            model_cell = _multirow(n_subrows, model_display) if f_idx == 0 else ""
+            for f_idx, ft in enumerate(filter_tags):
+                filter_display = FILTER_DISPLAY.get(ft, ft)
+                model_cell = _multirow(n_subrows, model_display) if f_idx == 0 else ""
 
-            row_cells = [model_cell, filter_display]
-            for collection in collections:
-                for measure in measures:
-                    row_cells.append(_cell(data[collection][model][ft].get(measure), collection, measure))
-            lines.append(" & ".join(row_cells) + r" \\")
+                row_cells = [model_cell, filter_display]
+                for collection in chunk_colls:
+                    for measure in measures:
+                        row_cells.append(_cell(data[collection][model][ft].get(measure), collection, measure))
+                lines.append(" & ".join(row_cells) + r" \\")
 
-        if include_baseline:
-            bl_cells = ["", "Baseline"]
-            for collection in collections:
-                for measure in measures:
-                    bl_cells.append(_cell(data[collection][model]["__baseline__"].get(measure), collection, measure))
-            lines.append(" & ".join(bl_cells) + r" \\")
+            if include_baseline:
+                bl_cells = ["", "Baseline"]
+                for collection in chunk_colls:
+                    for measure in measures:
+                        bl_cells.append(_cell(data[collection][model]["__baseline__"].get(measure), collection, measure))
+                lines.append(" & ".join(bl_cells) + r" \\")
 
-        if m_idx < len(models) - 1:
-            lines.append(r"\midrule")
+            if m_idx < len(models) - 1:
+                lines.append(r"\midrule")
 
-    lines.append(r"\bottomrule")
+        lines.append(r"\bottomrule")
+        return lines
 
+    # ── assemble grid ─────────────────────────────────────────────────────────
+    collection_chunks = _chunk(collections, COLS_PER_ROW)
     alpha_str = str(alpha)
     cap = caption or (
         rf"Retrieval performance ({', '.join(measures)}) at $\alpha$={alpha_str}, "
         rf"selector={selector}."
     )
-    lbl   = label or "tab:performance"
-    wide  = n_coll * n_meas > 6
+    lbl  = label or "tab:performance"
+    wide = n_coll * n_meas > 6
 
-    return _table_wrap(lines, col_spec, cap, lbl, wide=wide)
+    if len(collection_chunks) == 1:
+        col_spec = "ll" + "".join(["|" + "c" * n_meas] * n_coll)
+        return _table_wrap(_build_chunk(collection_chunks[0]), col_spec, cap, lbl, wide=wide)
+
+    chunks_lines = [_build_chunk(ch) for ch in collection_chunks]
+    col_specs    = ["ll" + "".join(["|" + "c" * n_meas] * len(ch)) for ch in collection_chunks]
+    return _table_wrap_grid(chunks_lines, col_specs, cap, lbl, wide=wide)
 
 
 # ── Table: comparison ─────────────────────────────────────────────────────────
@@ -428,8 +484,7 @@ def table_comparison(
     n_cols_per = n_topk + 2          # Top-k cols + RDIME col + delta(%) col
     n_coll     = len(collections)
     n_subrows  = len(filter_tags) + (1 if include_baseline else 0)
-
-    col_spec = "ll" + "".join(["|" + "c" * n_cols_per] * n_coll)
+    COLS_PER_ROW = 2
 
     # ── pre-load ───────────────────────────────────────────────────────────────
     topk_data:  dict = {}   # [collection][model][filter] -> {alpha: value}
@@ -457,78 +512,77 @@ def table_comparison(
                 )
             bl_data[collection][model] = load_baseline_means(collection, model, [measure])[measure]
 
-    # ── build lines ───────────────────────────────────────────────────────────
-    lines: list[str] = []
-    lines.append(r"\toprule")
+    def _build_chunk(chunk_colls: list[str]) -> list[str]:
+        n_chunk = len(chunk_colls)
+        lines: list[str] = []
+        lines.append(r"\toprule")
 
-    # header row 1 — collection names
-    coll_headers = " & ".join(
-        _multicolumn(n_cols_per, "c", COLLECTION_DISPLAY.get(c, c))
-        for c in collections
-    )
-    lines.append(rf"Model & Filter & {coll_headers} \\")
+        # header row 1 — collection names
+        coll_headers = " & ".join(
+            _multicolumn(n_cols_per, "c", COLLECTION_DISPLAY.get(c, c))
+            for c in chunk_colls
+        )
+        lines.append(rf"Model & Filter & {coll_headers} \\")
 
-    # header row 2 — alpha columns + RDIME + delta(%)
-    cmidrules = " ".join(
-        _cmidrule(3 + i * n_cols_per, 2 + (i + 1) * n_cols_per)
-        for i in range(n_coll)
-    )
-    lines.append(cmidrules)
-    per_coll_header = (
-        " & ".join(str(a) for a in topk_alphas)
-        + r" & RDIME & $\Delta$(\%)"
-    )
-    lines.append(rf" & & {' & '.join([per_coll_header] * n_coll)} \\")
-    lines.append(r"\midrule")
+        # header row 2 — alpha columns + RDIME + delta(%)
+        cmidrules = " ".join(
+            _cmidrule(3 + i * n_cols_per, 2 + (i + 1) * n_cols_per)
+            for i in range(n_chunk)
+        )
+        lines.append(cmidrules)
+        per_coll_header = (
+            " & ".join(str(a) for a in topk_alphas)
+            + r" & RDIME & $\Delta$(\%)"
+        )
+        lines.append(rf" & & {' & '.join([per_coll_header] * n_chunk)} \\")
+        lines.append(r"\midrule")
 
-    # body
-    for m_idx, model in enumerate(models):
-        model_display = MODEL_DISPLAY.get(model, model)
+        for m_idx, model in enumerate(models):
+            model_display = MODEL_DISPLAY.get(model, model)
 
-        for f_idx, ft in enumerate(filter_tags):
-            filter_display = FILTER_DISPLAY.get(ft, ft)
-            model_cell = _multirow(n_subrows, model_display) if f_idx == 0 else ""
+            for f_idx, ft in enumerate(filter_tags):
+                filter_display = FILTER_DISPLAY.get(ft, ft)
+                model_cell = _multirow(n_subrows, model_display) if f_idx == 0 else ""
 
-            row_cells = [model_cell, filter_display]
-            for collection in collections:
-                # top-k cells — bold the best among shown alphas
-                topk_vals    = [topk_data[collection][model][ft].get(a) for a in topk_alphas]
-                best_indices = _best_indices(topk_vals)
-                for i, v in enumerate(topk_vals):
-                    s = _fmt(v)
-                    row_cells.append(_bold(s) if i in best_indices else s)
+                row_cells = [model_cell, filter_display]
+                for collection in chunk_colls:
+                    topk_vals    = [topk_data[collection][model][ft].get(a) for a in topk_alphas]
+                    best_indices = _best_indices(topk_vals)
+                    for i, v in enumerate(topk_vals):
+                        s = _fmt(v)
+                        row_cells.append(_bold(s) if i in best_indices else s)
 
-                # RDIME cell — value + superscript star + (retained frac)
-                rdime_val = rdime_data[collection][model][ft]
-                frac      = rdime_frac[collection][model][ft]
-                if rdime_val is not None:
-                    frac_str   = f"({frac:.2f})" if frac is not None else ""
-                    rdime_cell = rf"{_fmt(rdime_val)}$^\star$ {frac_str}"
-                else:
-                    rdime_cell = "--"
-                row_cells.append(rdime_cell)
+                    rdime_val = rdime_data[collection][model][ft]
+                    frac      = rdime_frac[collection][model][ft]
+                    if rdime_val is not None:
+                        frac_str   = f"({frac:.2f})" if frac is not None else ""
+                        rdime_cell = rf"{_fmt(rdime_val)}$^\star$ {frac_str}"
+                    else:
+                        rdime_cell = "--"
+                    row_cells.append(rdime_cell)
 
-                # delta(%) — RDIME vs best top-k shown
-                best_topk = max((v for v in topk_vals if v is not None), default=None)
-                row_cells.append(_delta_pct(rdime_val, best_topk))
+                    best_topk = max((v for v in topk_vals if v is not None), default=None)
+                    row_cells.append(_delta_pct(rdime_val, best_topk))
 
-            lines.append(" & ".join(row_cells) + r" \\")
+                lines.append(" & ".join(row_cells) + r" \\")
 
-        if include_baseline:
-            bl_cells = ["", "Baseline"]
-            for collection in collections:
-                bl_val = bl_data[collection][model]
-                bl_cells += ["--"] * n_topk
-                frac_str = "(1.00)"
-                bl_cells.append(f"{_fmt(bl_val)} {frac_str}" if bl_val is not None else "--")
-                bl_cells.append("--")
-            lines.append(" & ".join(bl_cells) + r" \\")
+            if include_baseline:
+                bl_cells = ["", "Baseline"]
+                for collection in chunk_colls:
+                    bl_val = bl_data[collection][model]
+                    bl_cells += ["--"] * n_topk
+                    frac_str = "(1.00)"
+                    bl_cells.append(f"{_fmt(bl_val)} {frac_str}" if bl_val is not None else "--")
+                    bl_cells.append("--")
+                lines.append(" & ".join(bl_cells) + r" \\")
 
-        if m_idx < len(models) - 1:
-            lines.append(r"\midrule")
+            if m_idx < len(models) - 1:
+                lines.append(r"\midrule")
 
-    lines.append(r"\bottomrule")
+        lines.append(r"\bottomrule")
+        return lines
 
+    # ── assemble grid ─────────────────────────────────────────────────────────
     cap = caption or (
         rf"Comparison of {measure} between RDIME and fixed Top-$k$ thresholds. "
         r"$\star$ denotes RDIME; parentheses show mean fraction of retained dimensions. "
@@ -536,7 +590,15 @@ def table_comparison(
     )
     lbl = label or "tab:comparison"
 
-    return _table_wrap(lines, col_spec, cap, lbl, wide=True)
+    collection_chunks = _chunk(collections, COLS_PER_ROW)
+
+    if len(collection_chunks) == 1:
+        col_spec = "ll" + "".join(["|" + "c" * n_cols_per] * n_coll)
+        return _table_wrap(_build_chunk(collection_chunks[0]), col_spec, cap, lbl, wide=True)
+
+    chunks_lines = [_build_chunk(ch) for ch in collection_chunks]
+    col_specs    = ["ll" + "".join(["|" + "c" * n_cols_per] * len(ch)) for ch in collection_chunks]
+    return _table_wrap_grid(chunks_lines, col_specs, cap, lbl, wide=True)
 
 
 # ── Table: sweep ──────────────────────────────────────────────────────────────
@@ -544,7 +606,7 @@ def table_comparison(
 def table_sweep(
     models: Sequence[str],
     collections: Sequence[str],
-    filter_tag: str,
+    filter_tags: Sequence[str],
     selector: str = "top-alpha",
     alphas: Sequence[float] = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0),
     measures: Sequence[str] = ("nDCG@10", "AP"),
@@ -553,117 +615,158 @@ def table_sweep(
     label: str | None = None,
 ) -> str:
     """
-    Sweep table: alpha values as column groups, measures as sub-columns.
+    Sweep table: alpha values as column groups, multiple filters as sub-rows.
 
     Shows how retrieval performance evolves as more embedding dimensions are
-    activated. Reveals where performance saturates and whether different
-    measures agree on the optimal alpha.
+    activated across different filter strategies. All filters are shown side
+    by side for easy comparison within each collection.
 
     Layout:
       - Row groups:    one per model
-      - Sub-rows:      one per collection
-      - Column groups: one per alpha value (+ optional Baseline group)
-      - Columns:       one per measure within each alpha group
-      - Bold:          best alpha per (model, collection, measure)
+      - Sub-rows:      one per filter tag
+      - Column groups: one per collection  (each spanning alpha cols + BL col)
+      - Columns:       alpha_1 ... alpha_n  BL   (repeated per collection)
+      - Bold:          best alpha per (model, filter, collection, measure)
+
+    Note: one measure at a time — pass a single element in `measures` for a
+    clean table; multiple measures stack within each alpha cell (not typical).
 
     Args:
         models:           model keys to include
         collections:      collection keys to include
-        filter_tag:       single filter tag (one sweep at a time)
+        filter_tags:      filter tags shown as sub-rows (e.g. ["prf-k2", "oracular"])
         selector:         selector tag (typically "top-alpha")
-        alphas:           alpha values to show as column groups
-        measures:         IR measures shown within each alpha group
-        include_baseline: add a full-dim baseline column group at the right
+        alphas:           alpha values shown as columns within each collection group
+        measures:         IR measures — typically one for this layout
+        include_baseline: add a BL column at the right of each collection group
         caption / label:  LaTeX caption and label strings
     """
-    n_meas  = len(measures)
-    n_alpha = len(alphas)
-    n_extra = n_meas if include_baseline else 0
-
-    # column spec: ll | (c...c per alpha) | (c...c baseline)
-    col_spec = (
-        "ll"
-        + "|" + "c" * (n_alpha * n_meas)
-        + ("|" + "c" * n_extra if include_baseline else "")
-    )
+    n_meas     = len(measures)
+    n_alpha    = len(alphas)
+    n_coll     = len(collections)
+    n_subrows  = len(filter_tags)
+    # columns per collection group: alpha cols (× n_meas) + optional BL (× n_meas)
+    n_cols_per = n_alpha * n_meas + (n_meas if include_baseline else 0)
+    COLS_PER_ROW = 2
 
     # ── pre-load ───────────────────────────────────────────────────────────────
-    data: dict = {}   # [collection][model][measure][alpha] = mean_value
-    bl:   dict = {}   # [collection][model][measure]        = mean_value
+    # data[collection][model][filter_tag][measure] -> {alpha: mean_value}
+    data: dict = {}
+    bl:   dict = {}   # [collection][model][measure] = mean_value
     for collection in collections:
         data[collection] = {}
         bl[collection]   = {}
         for model in models:
-            sweep = load_sweep_means(collection, model, filter_tag, selector, measures)
-            data[collection][model] = sweep
-            bl[collection][model]   = load_baseline_means(collection, model, measures)
+            data[collection][model] = {}
+            for ft in filter_tags:
+                sweep = load_sweep_means(collection, model, ft, selector, measures)
+                data[collection][model][ft] = sweep
+            bl[collection][model] = load_baseline_means(collection, model, measures)
 
-    # ── build lines ───────────────────────────────────────────────────────────
-    lines: list[str] = []
-    lines.append(r"\toprule")
+    def _build_chunk(chunk_colls: list[str]) -> list[str]:
+        n_chunk = len(chunk_colls)
+        lines: list[str] = []
+        lines.append(r"\toprule")
 
-    # header row 1 — alpha group labels + optional Baseline
-    alpha_headers = " & ".join(
-        _multicolumn(n_meas, "c", str(a)) for a in alphas
-    )
-    bl_header = " & " + _multicolumn(n_meas, "c", "Baseline") if include_baseline else ""
-    lines.append(rf"Model & Collection & {alpha_headers}{bl_header} \\")
+        # header row 1 — collection names spanning their column groups
+        coll_headers = " & ".join(
+            _multicolumn(n_cols_per, "c", COLLECTION_DISPLAY.get(c, c))
+            for c in chunk_colls
+        )
+        lines.append(rf"Model & Filter & {coll_headers} \\")
 
-    # cmidrules under each alpha group (and baseline)
-    cmidrule_parts = [_cmidrule(3 + i * n_meas, 2 + (i + 1) * n_meas) for i in range(n_alpha)]
-    if include_baseline:
-        start = 3 + n_alpha * n_meas
-        cmidrule_parts.append(_cmidrule(start, start + n_meas - 1))
-    lines.append(" ".join(cmidrule_parts))
+        # cmidrules under each collection group
+        cmidrule_parts = [
+            _cmidrule(3 + i * n_cols_per, 2 + (i + 1) * n_cols_per)
+            for i in range(n_chunk)
+        ]
+        lines.append(" ".join(cmidrule_parts))
 
-    # header row 2 — measure names repeated per alpha group (and baseline)
-    n_groups  = n_alpha + (1 if include_baseline else 0)
-    meas_str  = " & ".join(list(measures) * n_groups)
-    lines.append(rf" & & {meas_str} \\")
-    lines.append(r"\midrule")
+        # header row 2 — alpha values (+ BL) repeated per collection
+        alpha_labels = " & ".join(
+            (_multicolumn(n_meas, "c", str(a)) if n_meas > 1 else str(a))
+            for a in alphas
+        )
+        bl_label = (
+            (" & " + (_multicolumn(n_meas, "c", "BL") if n_meas > 1 else "BL"))
+            if include_baseline else ""
+        )
+        per_coll_h2 = alpha_labels + bl_label
+        lines.append(rf" & & {' & '.join([per_coll_h2] * n_chunk)} \\")
 
-    # body
-    for m_idx, model in enumerate(models):
-        model_display = MODEL_DISPLAY.get(model, model)
-        n_coll        = len(collections)
+        # header row 3 — measure names, only needed when n_meas > 1
+        if n_meas > 1:
+            n_groups = n_alpha + (1 if include_baseline else 0)
+            meas_str = " & ".join(list(measures) * n_groups)
+            sub_rules = []
+            for ci in range(n_chunk):
+                base = 3 + ci * n_cols_per
+                for ai in range(n_alpha):
+                    s = base + ai * n_meas
+                    sub_rules.append(_cmidrule(s, s + n_meas - 1))
+                if include_baseline:
+                    s = base + n_alpha * n_meas
+                    sub_rules.append(_cmidrule(s, s + n_meas - 1))
+            lines.append(" ".join(sub_rules))
+            lines.append(rf" & & {' & '.join([meas_str] * n_chunk)} \\")
 
-        for c_idx, collection in enumerate(collections):
-            coll_display = COLLECTION_DISPLAY.get(collection, collection)
-            model_cell   = _multirow(n_coll, model_display) if c_idx == 0 else ""
+        lines.append(r"\midrule")
 
-            # precompute best alpha index per measure for this row
-            best_per_measure = {
-                m: _best_indices([data[collection][model][m].get(a) for a in alphas])
-                for m in measures
-            }
+        for m_idx, model in enumerate(models):
+            model_display = MODEL_DISPLAY.get(model, model)
 
-            row_cells = [model_cell, coll_display]
-            for a_idx, a in enumerate(alphas):
-                for measure in measures:
-                    v = data[collection][model][measure].get(a)
-                    s = _fmt(v)
-                    row_cells.append(_bold(s) if a_idx in best_per_measure[measure] else s)
+            for f_idx, ft in enumerate(filter_tags):
+                filter_display = FILTER_DISPLAY.get(ft, ft)
+                model_cell     = _multirow(n_subrows, model_display) if f_idx == 0 else ""
 
-            if include_baseline:
-                for measure in measures:
-                    row_cells.append(_fmt(bl[collection][model].get(measure)))
+                row_cells = [model_cell, filter_display]
 
-            lines.append(" & ".join(row_cells) + r" \\")
+                for collection in chunk_colls:
+                    best_per_measure = {
+                        m: _best_indices([
+                            data[collection][model][ft][m].get(a) for a in alphas
+                        ])
+                        for m in measures
+                    }
 
-        if m_idx < len(models) - 1:
-            lines.append(r"\midrule")
+                    for a_idx, a in enumerate(alphas):
+                        for measure in measures:
+                            v = data[collection][model][ft][measure].get(a)
+                            s = _fmt(v)
+                            row_cells.append(
+                                _bold(s) if a_idx in best_per_measure[measure] else s
+                            )
 
-    lines.append(r"\bottomrule")
+                    if include_baseline:
+                        for measure in measures:
+                            row_cells.append(_fmt(bl[collection][model].get(measure)))
 
-    filter_display = FILTER_DISPLAY.get(filter_tag, filter_tag)
+                lines.append(" & ".join(row_cells) + r" \\")
+
+            if m_idx < len(models) - 1:
+                lines.append(r"\midrule")
+
+        lines.append(r"\bottomrule")
+        return lines
+
+    # ── assemble grid ─────────────────────────────────────────────────────────
+    filter_displays = ", ".join(FILTER_DISPLAY.get(ft, ft) for ft in filter_tags)
     cap = caption or (
-        rf"Alpha sweep for {filter_display} with {selector} selector "
-        rf"({', '.join(measures)}). Bold: best $\alpha$ per row."
+        rf"Alpha sweep for {filter_displays} with {selector} selector "
+        rf"({', '.join(measures)}). Bold: best $\alpha$ per row. BL = full-dim baseline."
     )
     lbl  = label or "tab:sweep"
-    wide = n_alpha * n_meas > 8
+    wide = n_coll * n_cols_per > 8
 
-    return _table_wrap(lines, col_spec, cap, lbl, wide=wide)
+    collection_chunks = _chunk(collections, COLS_PER_ROW)
+
+    if len(collection_chunks) == 1:
+        col_spec = "ll" + "".join(["|" + "c" * n_cols_per] * n_coll)
+        return _table_wrap(_build_chunk(collection_chunks[0]), col_spec, cap, lbl, wide=wide)
+
+    chunks_lines = [_build_chunk(ch) for ch in collection_chunks]
+    col_specs    = ["ll" + "".join(["|" + "c" * n_cols_per] * len(ch)) for ch in collection_chunks]
+    return _table_wrap_grid(chunks_lines, col_specs, cap, lbl, wide=wide)
 
 
 # ── Table: retained ───────────────────────────────────────────────────────────
@@ -695,33 +798,34 @@ def table_retained(
         selector:        selector tag (should be "rdime")
         caption / label: LaTeX caption and label strings
     """
-    col_spec = "ll" + "c" * len(collections)
+    COLS_PER_ROW = 2
 
-    lines: list[str] = []
-    lines.append(r"\toprule")
+    def _build_chunk(chunk_colls: list[str]) -> list[str]:
+        lines: list[str] = []
+        lines.append(r"\toprule")
+        coll_cols = " & ".join(COLLECTION_DISPLAY.get(c, c) for c in chunk_colls)
+        lines.append(rf"Model & Filter & {coll_cols} \\")
+        lines.append(r"\midrule")
 
-    coll_cols = " & ".join(COLLECTION_DISPLAY.get(c, c) for c in collections)
-    lines.append(rf"Model & Filter & {coll_cols} \\")
-    lines.append(r"\midrule")
+        for m_idx, model in enumerate(models):
+            model_display = MODEL_DISPLAY.get(model, model)
+            n_subrows     = len(filter_tags)
 
-    for m_idx, model in enumerate(models):
-        model_display = MODEL_DISPLAY.get(model, model)
-        n_subrows     = len(filter_tags)
+            for f_idx, ft in enumerate(filter_tags):
+                filter_display = FILTER_DISPLAY.get(ft, ft)
+                model_cell     = _multirow(n_subrows, model_display) if f_idx == 0 else ""
 
-        for f_idx, ft in enumerate(filter_tags):
-            filter_display = FILTER_DISPLAY.get(ft, ft)
-            model_cell     = _multirow(n_subrows, model_display) if f_idx == 0 else ""
+                frac_cells = [
+                    _fmt(load_retained_frac(c, model, ft, selector), decimals=2)
+                    for c in chunk_colls
+                ]
+                lines.append(f"{model_cell} & {filter_display} & " + " & ".join(frac_cells) + r" \\")
 
-            frac_cells = [
-                _fmt(load_retained_frac(c, model, ft, selector), decimals=2)
-                for c in collections
-            ]
-            lines.append(f"{model_cell} & {filter_display} & " + " & ".join(frac_cells) + r" \\")
+            if m_idx < len(models) - 1:
+                lines.append(r"\midrule")
 
-        if m_idx < len(models) - 1:
-            lines.append(r"\midrule")
-
-    lines.append(r"\bottomrule")
+        lines.append(r"\bottomrule")
+        return lines
 
     cap = caption or (
         r"Mean fraction of embedding dimensions retained by RDIME per query "
@@ -729,7 +833,15 @@ def table_retained(
     )
     lbl = label or "tab:retained"
 
-    return _table_wrap(lines, col_spec, cap, lbl, wide=False)
+    collection_chunks = _chunk(collections, COLS_PER_ROW)
+
+    if len(collection_chunks) == 1:
+        col_spec = "ll" + "c" * len(collections)
+        return _table_wrap(_build_chunk(collection_chunks[0]), col_spec, cap, lbl, wide=False)
+
+    chunks_lines = [_build_chunk(ch) for ch in collection_chunks]
+    col_specs    = ["ll" + "c" * len(ch) for ch in collection_chunks]
+    return _table_wrap_grid(chunks_lines, col_specs, cap, lbl, wide=False)
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -784,9 +896,7 @@ if __name__ == "__main__":
     parser.add_argument("--selector-rdime", default="rdime",
                         help="[comparison] Selector for RDIME  (default: rdime)")
 
-    # sweep
-    parser.add_argument("--filter",  default="prf-k2",
-                        help="[sweep] Single filter tag  (default: prf-k2)")
+    # sweep  (--filters is now shared with performance/comparison/retained)
     parser.add_argument("--alphas",  nargs="+", type=float,
                         default=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
                         help="[sweep] Alpha values shown as column groups")
@@ -832,7 +942,7 @@ if __name__ == "__main__":
         tex = table_sweep(
             models=args.models,
             collections=args.collections,
-            filter_tag=args.filter,
+            filter_tags=args.filters,
             selector=args.selector,
             alphas=args.alphas,
             measures=args.measures,

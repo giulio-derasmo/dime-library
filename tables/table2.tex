@@ -1,0 +1,49 @@
+\begin{table*}[t]
+\centering
+\small
+\makebox[\linewidth][c]{%
+\begin{tabular}{ll|ccccc|ccccc}
+\toprule
+Model & Filter & \multicolumn{5}{c}{DL '19} & \multicolumn{5}{c}{DL '20} \\
+\cmidrule(lr){3-7} \cmidrule(lr){8-12}
+ & & 0.4 & 0.6 & 0.8 & RDIME & $\Delta$(\%) & 0.4 & 0.6 & 0.8 & RDIME & $\Delta$(\%) \\
+\midrule
+\multirow{3}{*}{ANCE} & $u^{PRF}$ & 0.566 & 0.638 & \textbf{0.650} & 0.647$^\star$ (0.93) & -0.43 & 0.544 & 0.616 & \textbf{0.646} & 0.645$^\star$ (0.93) & -0.21 \\
+ & chatgpt4 & 0.574 & \textbf{0.661} & 0.660 & 0.654$^\star$ (0.94) & -1.04 & 0.529 & 0.618 & \textbf{0.657} & 0.650$^\star$ (0.93) & -1.04 \\
+ & Baseline & -- & -- & -- & 0.642 (1.00) & -- & -- & -- & -- & 0.645 (1.00) & -- \\
+\midrule
+\multirow{3}{*}{Contriever} & $u^{PRF}$ & 0.683 & 0.690 & \textbf{0.691} & 0.692$^\star$ (0.54) & +0.21 & 0.686 & \textbf{0.693} & 0.686 & 0.681$^\star$ (0.55) & -1.74 \\
+ & chatgpt4 & 0.736 & 0.740 & \textbf{0.743} & 0.744$^\star$ (0.59) & +0.18 & \textbf{0.696} & 0.693 & 0.690 & 0.700$^\star$ (0.63) & +0.55 \\
+ & Baseline & -- & -- & -- & 0.677 (1.00) & -- & -- & -- & -- & 0.669 (1.00) & -- \\
+\midrule
+\multirow{3}{*}{TAS-B} & $u^{PRF}$ & 0.736 & \textbf{0.737} & 0.729 & 0.735$^\star$ (0.51) & -0.37 & 0.700 & \textbf{0.710} & 0.707 & 0.704$^\star$ (0.52) & -0.87 \\
+ & chatgpt4 & \textbf{0.767} & 0.758 & 0.759 & 0.765$^\star$ (0.54) & -0.17 & 0.697 & 0.699 & \textbf{0.708} & 0.700$^\star$ (0.60) & -1.09 \\
+ & Baseline & -- & -- & -- & 0.717 (1.00) & -- & -- & -- & -- & 0.685 (1.00) & -- \\
+\bottomrule
+\end{tabular}
+}
+\par\vspace{6pt}
+\makebox[\linewidth][c]{%
+\begin{tabular}{ll|ccccc}
+\toprule
+Model & Filter & \multicolumn{5}{c}{DL HD} \\
+\cmidrule(lr){3-7}
+ & & 0.4 & 0.6 & 0.8 & RDIME & $\Delta$(\%) \\
+\midrule
+\multirow{3}{*}{ANCE} & $u^{PRF}$ & 0.272 & 0.330 & \textbf{0.335} & 0.329$^\star$ (0.93) & -1.86 \\
+ & chatgpt4 & 0.255 & 0.327 & \textbf{0.344} & 0.333$^\star$ (0.94) & -3.19 \\
+ & Baseline & -- & -- & -- & 0.327 (1.00) & -- \\
+\midrule
+\multirow{3}{*}{Contriever} & $u^{PRF}$ & \textbf{0.394} & 0.389 & 0.389 & 0.393$^\star$ (0.54) & -0.42 \\
+ & chatgpt4 & 0.382 & \textbf{0.392} & 0.389 & 0.388$^\star$ (0.61) & -0.94 \\
+ & Baseline & -- & -- & -- & 0.381 (1.00) & -- \\
+\midrule
+\multirow{3}{*}{TAS-B} & $u^{PRF}$ & 0.375 & \textbf{0.377} & 0.374 & 0.372$^\star$ (0.49) & -1.44 \\
+ & chatgpt4 & 0.396 & \textbf{0.404} & 0.391 & 0.400$^\star$ (0.52) & -0.93 \\
+ & Baseline & -- & -- & -- & 0.376 (1.00) & -- \\
+\bottomrule
+\end{tabular}
+}
+\caption{Comparison of nDCG@10 between RDIME and fixed Top-$k$ thresholds. $\star$ denotes RDIME; parentheses show mean fraction of retained dimensions. $\Delta$(\%) is relative to the best Top-$k$ column shown.}
+\label{tab:comparison}
+\end{table*}

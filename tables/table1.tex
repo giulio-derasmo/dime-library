@@ -1,25 +1,37 @@
-\begin{table}[t]
+\begin{table*}[t]
 \centering
 \small
-\begin{tabular}{ll|cc|cc|cc}
+\makebox[\linewidth][c]{%
+\begin{tabular}{ll|ccccc|ccccc}
 \toprule
-Model & Filter & \multicolumn{2}{c}{DL '19} & \multicolumn{2}{c}{DL '20} & \multicolumn{2}{c}{DL HD} \\
-\cmidrule(lr){3-4} \cmidrule(lr){5-6} \cmidrule(lr){7-8}
- & & nDCG@10 & AP & nDCG@10 & AP & nDCG@10 & AP \\
+Model & Filter & \multicolumn{5}{c}{DL '19} & \multicolumn{5}{c}{DL '20} \\
+\cmidrule(lr){3-7} \cmidrule(lr){8-12}
+ & & 0.2 & 0.4 & 0.6 & 0.8 & BL & 0.2 & 0.4 & 0.6 & 0.8 & BL \\
 \midrule
-\multirow{3}{*}{ANCE} & $u^{PRF}$ & -- & -- & -- & -- & -- & -- \\
- & $u^{Oracle}$ & -- & -- & -- & -- & -- & -- \\
- & Baseline & 0.642 & 0.361 & 0.645 & 0.392 & 0.327 & 0.181 \\
+\multirow{2}{*}{Contriever} & $u^{PRF}$ & 0.676 & 0.683 & 0.690 & \textbf{0.691} & 0.677 & 0.682 & 0.686 & \textbf{0.693} & 0.686 & 0.669 \\
+ & chatgpt4 & 0.734 & 0.736 & 0.740 & \textbf{0.743} & 0.677 & \textbf{0.697} & 0.696 & 0.693 & 0.690 & 0.669 \\
 \midrule
-\multirow{3}{*}{Contriever} & $u^{PRF}$ & 0.691 & \textbf{0.508} & -- & -- & -- & -- \\
- & $u^{Oracle}$ & -- & -- & -- & -- & -- & -- \\
- & Baseline & 0.677 & 0.494 & 0.669 & \textbf{0.479} & \textbf{0.381} & \textbf{0.245} \\
-\midrule
-\multirow{3}{*}{TAS-B} & $u^{PRF}$ & -- & -- & -- & -- & -- & -- \\
- & $u^{Oracle}$ & -- & -- & -- & -- & -- & -- \\
- & Baseline & \textbf{0.717} & 0.476 & \textbf{0.685} & 0.476 & 0.376 & 0.239 \\
+\multirow{2}{*}{TAS-B} & $u^{PRF}$ & 0.725 & 0.736 & \textbf{0.737} & 0.729 & 0.717 & 0.690 & 0.700 & \textbf{0.710} & 0.707 & 0.685 \\
+ & chatgpt4 & 0.752 & \textbf{0.767} & 0.758 & 0.759 & 0.717 & 0.691 & 0.697 & 0.699 & \textbf{0.708} & 0.685 \\
 \bottomrule
 \end{tabular}
-\caption{Retrieval performance (nDCG@10, AP) at $\alpha$=0.8, selector=top-alpha.}
-\label{tab:performance}
-\end{table}
+}
+\par\vspace{6pt}
+\makebox[\linewidth][c]{%
+\begin{tabular}{ll|ccccc}
+\toprule
+Model & Filter & \multicolumn{5}{c}{DL HD} \\
+\cmidrule(lr){3-7}
+ & & 0.2 & 0.4 & 0.6 & 0.8 & BL \\
+\midrule
+\multirow{2}{*}{Contriever} & $u^{PRF}$ & \textbf{0.397} & 0.394 & 0.389 & 0.389 & 0.381 \\
+ & chatgpt4 & 0.380 & 0.382 & \textbf{0.392} & 0.389 & 0.381 \\
+\midrule
+\multirow{2}{*}{TAS-B} & $u^{PRF}$ & 0.353 & 0.375 & \textbf{0.377} & 0.374 & 0.376 \\
+ & chatgpt4 & 0.385 & 0.396 & \textbf{0.404} & 0.391 & 0.376 \\
+\bottomrule
+\end{tabular}
+}
+\caption{Alpha sweep for $u^{PRF}$, chatgpt4 with top-alpha selector (nDCG@10). Bold: best $\alpha$ per row. BL = full-dim baseline.}
+\label{tab:sweep}
+\end{table*}
