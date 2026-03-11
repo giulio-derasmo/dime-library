@@ -58,3 +58,8 @@ def get_ir_dataset_queries_qrels(collection: str) -> str:
 # ── Default measures ───────────────────────────────────────────────────────────
 
 DEFAULT_MEASURES = ["nDCG@10", "AP", "R@1000", "RR@10"]
+
+# ─── DIME options ───────────────────────────────────────────────────────────
+
+FILTERS   = ["prf", "oracular"]
+SELECTORS = ["top-alpha"]   # extend as new selectors are added

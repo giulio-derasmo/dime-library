@@ -8,7 +8,7 @@
 #   python pipelines/dime.py -c dl19 -m contriever -f prf --config configs/prf_k10.yaml
 #   python pipelines/dime.py -c dl19 -m contriever -f prf --config configs/prf_k10.yaml --selector top-alpha
 #   python pipelines/dime.py -c dl19 -m contriever -f oracular --config configs/oracular.yaml --selector your-method
-#   python pipelines/dime.py -c dl19 -m contriever -f prf --config configs/prf_k10.yaml --save --n_jobs -1
+#   python pipelines/dime.py -c dl19 -m contriever -f prf --config configs/prf_k10.yaml --save --n_jobs -1 --selector top-alpha
 
 import argparse
 import logging
@@ -19,7 +19,10 @@ import yaml
 from dotenv import load_dotenv
 load_dotenv()
 
-from src.config import COLLECTIONS, MODEL_TO_HF, DEFAULT_MEASURES, RUNS_DIR
+import sys
+sys.path.append('/hdd4/giuder/Documents/projects/dime')
+
+from src.config import COLLECTIONS, MODEL_TO_HF, DEFAULT_MEASURES, RUNS_DIR, FILTERS, SELECTORS
 from src.data_loading import CollectionLoader
 from src.evaluate import load_run
 from src.index import load_index
@@ -33,10 +36,6 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger(__name__)
-
-FILTERS   = ["prf", "oracular"]
-SELECTORS = ["top-alpha"]   # extend as new selectors are added
-
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -78,13 +77,7 @@ def build_filter(args, filter_cfg, qrys_encoder, qrels):
             k=filter_cfg["k"],
         )
     if args.filter == "oracular":
-        from src.dime.filters.oracular import OracularFilter
-        docs_encoder = CorpusEncoding(args.model, args.collection)
-        return OracularFilter(
-            qrys_encoder=qrys_encoder,
-            docs_encoder=docs_encoder,
-            qrels=qrels,
-        )
+        pass
     raise ValueError(f"Unknown filter: {args.filter}")
 
 

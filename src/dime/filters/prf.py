@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from filters.base import DimeFilter
+from src.dime.filters.base import DimeFilter
 from src.dime.importance import ImportanceMatrix
 from src.memmap_interface import CorpusEncoding, QueriesEncoding
 
