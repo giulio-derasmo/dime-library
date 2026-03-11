@@ -7,7 +7,7 @@ import pandas as pd
 
 from src.config import RUNS_DIR, get_corpus_name
 from src.index import load_index
-from src.memmap_interface import CorpusEncoding, QueriesEncoding
+from src.memmap_interface import CorpusMapping, QueriesEncoding
 
 logger = logging.getLogger(__name__)
 
@@ -28,43 +28,37 @@ def search(
     Returns a run dataframe in TREC format:
         query_id | Q0 | doc_id | rank | score | run
     """
-
-    # ── load index and encodings ───────────────────────────────────────────────
-    logger.info(f"Loading index  | model={model_name} | collection={collection}")
+    logger.info(f"Loading index   | model={model_name} | collection={collection}")
     index = load_index(model_name, collection)
 
     logger.info(f"Loading queries | model={model_name} | collection={collection}")
     query_enc = QueriesEncoding(model_name, collection)
 
+    # CorpusMapping: only loads corpus_mapping.csv — no memmap
     logger.info(f"Loading corpus mapping | model={model_name} | collection={collection}")
-    corp_enc  = CorpusEncoding(model_name, collection)
-
-    # offset → did mapper — needed to convert faiss int ids back to doc ids
-    offset_to_did = corp_enc.get_ids()   # list where index = offset
+    corpus_mapping = CorpusMapping(model_name, collection)
+    offset_to_did  = corpus_mapping.get_ids()   # list[str], index = faiss offset
 
     # ── search ─────────────────────────────────────────────────────────────────
     query_ids = query_enc.get_ids()
-    qembs     = query_enc.get_encoding(query_ids)   # [N_queries, D]
+    qembs     = query_enc.get_encoding(query_ids)       # [N, D]
 
     logger.info(f"Searching | n_queries={len(query_ids)} | k={k}")
-    scores, offsets = index.search(qembs, k)        # both [N_queries, k]
+    scores, offsets = index.search(qembs, k)            # [N, k]
 
     # ── build TREC run dataframe ───────────────────────────────────────────────
-    out = []
-    for i, qid in enumerate(query_ids):
-        run = pd.DataFrame({
-            "query_id": qid,
-            "Q0":       "Q0",
-            "doc_id":   [offset_to_did[o] for o in offsets[i]],
-            "rank":     np.arange(k),
-            "score":    scores[i],
-            "run":      model_name,
-        })
-        out.append(run)
+    n_queries = len(query_ids)
+    run = pd.DataFrame({
+        "query_id": np.repeat(query_ids, k),
+        "Q0":       "Q0",
+        "doc_id":   [offset_to_did[o] for o in offsets.ravel()],
+        "rank":     np.tile(np.arange(k), n_queries),
+        "score":    scores.ravel(),
+        "run":      model_name,
+    })
 
-    out = pd.concat(out, ignore_index=True)
-    logger.info(f"Search complete | {len(out)} results")
-    return out
+    logger.info(f"Search complete | {len(run)} results")
+    return run
 
 
 def save_run(run: pd.DataFrame, model_name: str, collection: str):

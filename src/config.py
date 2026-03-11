@@ -38,6 +38,11 @@ COLLECTIONS = {
         "ir_dataset_docs": "msmarco-passage",
         "ir_dataset_queries_qrels": "msmarco-passage/trec-dl-2020/judged",
     },
+    "dlhard": {
+        "corpus":          "msmarco-passage",
+        "ir_dataset_docs": "msmarco-passage",
+        "ir_dataset_queries_qrels": "msmarco-passage/trec-dl-hard",
+    },
 }
 
 def get_corpus_name(collection: str) -> str:
@@ -48,3 +53,8 @@ def get_ir_dataset_docs(collection: str) -> str:
 
 def get_ir_dataset_queries_qrels(collection: str) -> str:
     return COLLECTIONS[collection]["ir_dataset_queries_qrels"]
+
+
+# ── Default measures ───────────────────────────────────────────────────────────
+
+DEFAULT_MEASURES = ["nDCG@10", "AP", "R@1000", "RR@10"]

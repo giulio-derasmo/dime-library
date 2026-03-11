@@ -6,14 +6,10 @@ from pathlib import Path
 import ir_measures
 import pandas as pd
 
-from src.config import RUNS_DIR, DATA_DIR
+from src.config import RUNS_DIR, DATA_DIR, DEFAULT_MEASURES
 from src.data_loading import CollectionLoader
 
 logger = logging.getLogger(__name__)
-
-# ── Default measures ───────────────────────────────────────────────────────────
-
-DEFAULT_MEASURES = ["nDCG@10", "AP", "R@1000", "RR@10"]
 
 
 # ── Core evaluation ────────────────────────────────────────────────────────────

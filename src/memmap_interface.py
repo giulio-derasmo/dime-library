@@ -13,6 +13,80 @@ from src.config import MEMMAPS_DIR, get_corpus_name
 logger = logging.getLogger(__name__)
 
 
+# ── Metadata helpers ───────────────────────────────────────────────────────────
+
+def _load_metadata(base: Path) -> dict:
+    meta_path = base / "metadata.json"
+    if not meta_path.exists():
+        raise FileNotFoundError(
+            f"No metadata.json found at {meta_path}. "
+            f"Re-run encode_corpus() or encode_queries() to regenerate."
+        )
+    with open(meta_path) as f:
+        meta = json.load(f)
+    if meta.get("status") != "complete":
+        raise RuntimeError(
+            f"Memmap at {base} has status='{meta.get('status')}'. "
+            f"The encoding may be incomplete or corrupt. Re-run with overwrite=True."
+        )
+    return meta
+
+# ── Corpus Mapping — lightweight, no memmap ────────────────────────────────────
+
+class CorpusMapping:
+    """
+    Lightweight corpus interface: loads only corpus_mapping.csv.
+
+    Use this wherever you only need offset → doc_id conversion
+    (i.e. search and DIME sweep). Does NOT load the embedding memmap.
+
+    Usage:
+        mapping = CorpusMapping("contriever", "dl19")
+        doc_ids = mapping.get_ids()          # list[str], index = faiss offset
+        meta    = mapping.get_meta()
+    """
+
+    def __init__(self, model_name: str, collection: str):
+        corpus_name = get_corpus_name(collection)
+        base        = MEMMAPS_DIR / model_name / "corpora" / corpus_name
+
+        if not base.exists():
+            raise FileNotFoundError(
+                f"Corpus directory not found: {base}. Run encode_corpus() first."
+            )
+
+        self.model_name  = model_name
+        self.corpus_name = corpus_name
+        self.meta        = _load_metadata(base)
+
+        mapping          = pd.read_csv(base / "corpus_mapping.csv", dtype={"did": str})
+        # ids list is offset-ordered — index i == faiss offset i
+        self.ids         = mapping.sort_values("offset")["did"].tolist()
+        self.id_to_offset = dict(zip(mapping["did"], mapping["offset"]))
+
+        logger.info(
+            f"Loaded CorpusMapping: n={len(self.ids)} | corpus={corpus_name}"
+        )
+
+    def get_ids(self) -> list[str]:
+        """Return doc ids ordered by faiss offset."""
+        return self.ids
+
+    def get_meta(self) -> dict:
+        return self.meta
+
+    def __len__(self) -> int:
+        return len(self.ids)
+
+    def __repr__(self) -> str:
+        return (
+            f"CorpusMapping("
+            f"n={len(self)}, "
+            f"corpus={self.corpus_name}, "
+            f"model={self.model_name})"
+        )
+
+
 # ── Base ───────────────────────────────────────────────────────────────────────
 
 class MemmapEncoding:
@@ -28,7 +102,7 @@ class MemmapEncoding:
     def __init__(self, dat_path: Path, mapping_path: Path, id_col: str, sep: str = ","):
 
         # ── load and validate metadata ─────────────────────────────────────────
-        meta      = self._load_metadata(dat_path)
+        meta      = _load_metadata(dat_path.parent)
         emb_size  = meta["embedding_size"]
         dtype     = meta.get("dtype", "float32")
         n_items   = meta["n_items"]
@@ -46,30 +120,6 @@ class MemmapEncoding:
         self.ids          = list(self.id_to_offset.keys())
 
         logger.info(f"Loaded {self.__class__.__name__}: shape={self.shape} | path={dat_path}")
-
-    # ── metadata ───────────────────────────────────────────────────────────────
-
-    @staticmethod
-    def _load_metadata(dat_path: Path) -> dict:
-        meta_path = dat_path.parent / "metadata.json"
-
-        if not meta_path.exists():
-            raise FileNotFoundError(
-                f"No metadata.json found at {meta_path}. "
-                f"Re-run encode_corpus() or encode_queries() to regenerate."
-            )
-
-        with open(meta_path) as f:
-            meta = json.load(f)
-
-        # integrity check — catches incomplete/corrupt encodings
-        if meta.get("status") != "complete":
-            raise RuntimeError(
-                f"Memmap at {dat_path} has status='{meta.get('status')}'. "
-                f"The encoding may be incomplete or corrupt. Re-run encoding with overwrite=True."
-            )
-
-        return meta
 
     def get_meta(self) -> dict:
         """Return the full metadata dict for inspection."""

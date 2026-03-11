@@ -46,7 +46,7 @@ class CollectionLoader:
     def queries(self) -> pd.DataFrame:
         """Test queries for this collection."""
         return pd.DataFrame([
-            {"qid": q.query_id, "text": q.text}
+            {"query_id": q.query_id, "text": q.text}
             for q in self._qq_dataset.queries_iter()
         ])
 
