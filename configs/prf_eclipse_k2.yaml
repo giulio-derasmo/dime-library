@@ -1,0 +1,5 @@
+# prf_eclipse_k2.yaml
+kpos: 2
+kneg: 5
+lambda_pos: 1.0
+lambda_neg: 0.5

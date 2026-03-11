@@ -9,6 +9,8 @@ pip install nvitop
 pip install safetensors
 pip install python-dotenv
 pip install ir_measures
+pip install optuna
+
 
 conda activate dime
 mkdir -p $CONDA_PREFIX/etc/conda/activate.d;

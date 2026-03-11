@@ -98,10 +98,7 @@ COLLECTION_DISPLAY = {
 # LaTeX math names for filters — used as row labels
 FILTER_DISPLAY = {
     "prf-k2":   r"$u^{PRF}$",
-    "prf-k10":  r"$u^{PRF}$",
-    "oracular": r"$u^{Oracle}$",
-    "swc-k10":  r"$u^{SWC}$",
-    "llm":      r"$u^{LLM}$",
+    "chatgpt4":  r"$u^{LLM}$",
 }
 
 

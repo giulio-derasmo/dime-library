@@ -76,29 +76,55 @@ def parse_args():
 
 
 def build_filter(args, filter_cfg, qrys_encoder, qrels):
-    """Instantiate the requested DimeFilter from CLI args and config."""
-    if args.filter == "prf":
-        from src.dime.filters.prf import PRFFilter
-        docs_encoder = CorpusEncoding(args.model, args.collection)
-        run          = load_run(args.model, args.collection)
-        return PRFFilter(
+
+    from src.dime.filters.prf import PRFFilter
+    from src.dime.filters.gpt import GPTFilter
+
+    def _load_docs_and_run():
+        return CorpusEncoding(args.model, args.collection), load_run(args.model, args.collection)
+
+    eclipse   = args.filter.endswith("-eclipse")
+    base_name = args.filter.removesuffix("-eclipse")
+
+    docs_encoder, run = None, None  # loaded lazily, only when needed
+
+    if base_name == "prf":
+        docs_encoder, run = _load_docs_and_run()
+        base_filter = PRFFilter(
             qrys_encoder=qrys_encoder,
             docs_encoder=docs_encoder,
             run=run,
             k=filter_cfg["k"],
         )
-    if args.filter == "oracular":
-        pass
-    if args.filter == "gpt":
-        from src.dime.filters import GPTFilter
-        return GPTFilter(
+
+    elif base_name == "gpt":
+        base_filter = GPTFilter(
             qrys_encoder=qrys_encoder,
             model_name=args.model,
             collection=args.collection,
-            variant=filter_cfg["variant"],   # from your YAML config
+            variant=filter_cfg["variant"],
         )
-    raise ValueError(f"Unknown filter: {args.filter}")
 
+    elif base_name == "oracular":
+        raise NotImplementedError("OracularFilter not yet implemented.")
+
+    else:
+        raise ValueError(f"Unknown filter: {args.filter!r}")
+
+    if eclipse:
+        from src.dime.filters.eclipse import EclipseWrapper
+        if docs_encoder is None or run is None:  # not loaded by base filter branch
+            docs_encoder, run = _load_docs_and_run()
+        return EclipseWrapper(
+            base_filter=base_filter,
+            docs_encoder=docs_encoder,
+            run=run,
+            kneg=filter_cfg["kneg"],
+            lambda_pos=filter_cfg.get("lambda_pos", 1.0),
+            lambda_neg=filter_cfg.get("lambda_neg", 0.0),
+        )
+
+    return base_filter
 
 def build_selector(selector_name: str, qrys_encoder: QueriesEncoding, query_ids: list[str]):
     """
