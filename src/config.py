@@ -62,4 +62,4 @@ DEFAULT_MEASURES = ["nDCG@10", "AP", "R@1000", "RR@10"]
 # ─── DIME options ───────────────────────────────────────────────────────────
 
 FILTERS   = ["prf", "oracular"]
-SELECTORS = ["top-alpha"]   # extend as new selectors are added
+SELECTORS = ["top-alpha", "rdime"]   # extend as new selectors are added

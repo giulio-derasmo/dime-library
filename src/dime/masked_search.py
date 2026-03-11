@@ -90,6 +90,71 @@ class MaskedSearcher:
         scores, offsets = self.index.search(masked_q, k)
         return self._build_run(importance.query_ids, scores, offsets, k, alpha)
 
+    # ── single shot — for alpha-free selectors (e.g. RDIME) ──────────────────
+
+    def run_once(
+        self,
+        dim_filter: DimeFilter,
+        importance: ImportanceMatrix,
+        k: int = 1000,
+        save: bool = False,
+    ) -> "SweepResults":
+        """
+        Run a single masked search without an alpha grid.
+
+        Intended for selectors that determine their own threshold internally
+        (e.g. RDIMESelector). The result is stored in a SweepResults container
+        under the sentinel key "rdime", which round-trips cleanly through
+        CSV save/load (unlike None, which becomes NaN on reload).
+
+        The full persistence and evaluation API (.evaluate(), .save_results(),
+        .summary_table()) works exactly as after a sweep().
+
+        Args:
+            dim_filter: DimeFilter used — its .tag contributes to the filename
+            importance: ImportanceMatrix produced by dim_filter.compute()
+            k:          top-k documents to retrieve
+            save:       if True, write the run to disk
+
+        Returns:
+            SweepResults with a single entry keyed by the selector tag
+        """
+        query_ids   = importance.query_ids
+        qembs       = self.qrys_encoder.get_encoding(query_ids)
+        alpha_key   = self.selector.tag          # e.g. "rdime" — survives CSV round-trip
+
+        weights  = self.selector.select(importance, alpha=None)
+        masked_q = (qembs * weights).astype(np.float32)
+        scores, offsets = self.index.search(masked_q, k)
+
+        run = self._build_run(
+            query_ids, scores, offsets, k, alpha=alpha_key,
+            filter_tag=dim_filter.tag,
+            selector_tag=self.selector.tag,
+        )
+
+        # per-query fraction of retained dimensions — only meaningful for
+        # alpha-free selectors like RDIME where every query has its own budget
+        retained_fracs = pd.Series(
+            weights.mean(axis=1),    # [N] — fraction of dims kept per query
+            index=query_ids,
+            name="retained_frac",
+        )
+
+        results = SweepResults(
+            model_name=self.model_name,
+            collection=self.collection,
+            filter_tag=dim_filter.tag,
+            selector_tag=self.selector.tag,
+            data={alpha_key: run},
+            retained_fracs={alpha_key: retained_fracs},
+        )
+
+        if save:
+            results.save()
+
+        return results
+
     # ── alpha sweep — search only, no evaluation ───────────────────────────────
 
     def sweep(
@@ -234,15 +299,17 @@ class SweepResults:
         collection: str,
         filter_tag: str,
         selector_tag: str,
-        data: dict[float, pd.DataFrame],         # alpha → run DataFrame
+        data: dict[float, pd.DataFrame],                      # alpha → run DataFrame
+        retained_fracs: dict | None = None,                   # alpha → Series[query_id → frac]
     ):
-        self.model_name   = model_name
-        self.collection   = collection
-        self.filter_tag   = filter_tag
-        self.selector_tag = selector_tag
-        self._data        = data                 # alpha → run DataFrame
-        self._metrics     = {}                   # alpha → (per_query df, summary df)
-        self.alphas       = sorted(data.keys())
+        self.model_name      = model_name
+        self.collection      = collection
+        self.filter_tag      = filter_tag
+        self.selector_tag    = selector_tag
+        self._data           = data                           # alpha → run DataFrame
+        self._metrics        = {}                             # alpha → (per_query df, summary df)
+        self._retained_fracs = retained_fracs or {}           # alpha → Series (optional)
+        self.alphas          = sorted(data.keys(), key=lambda a: (isinstance(a, str), a))
 
     # ── filename stem — single source of truth ─────────────────────────────────
 
@@ -280,7 +347,8 @@ class SweepResults:
             self._metrics[alpha] = (per_query, summary_df)
             ndcg     = summary_df.loc[summary_df["measure"] == "nDCG@10", "mean"]
             ndcg_val = ndcg.values[0] if len(ndcg) else float("nan")
-            logger.info(f"alpha={alpha:.2f} | nDCG@10={ndcg_val:.4f}")
+            alpha_str = f"{alpha:.2f}" if isinstance(alpha, float) else str(alpha)
+            logger.info(f"alpha={alpha_str} | nDCG@10={ndcg_val:.4f}")
         return self
 
     @property
@@ -366,6 +434,20 @@ class SweepResults:
             per_query_frames.append(pq)
 
         combined = pd.concat(per_query_frames, ignore_index=True)
+
+        # merge per-query retained_frac if available (e.g. from RDIME)
+        if self._retained_fracs:
+            frac_frames = []
+            for alpha in self.alphas:
+                if alpha in self._retained_fracs:
+                    s = self._retained_fracs[alpha].rename("retained_frac").reset_index()
+                    s.columns = ["query_id", "retained_frac"]
+                    s["alpha"] = alpha
+                    frac_frames.append(s)
+            if frac_frames:
+                fracs_df = pd.concat(frac_frames, ignore_index=True)
+                combined = combined.merge(fracs_df, on=["query_id", "alpha"], how="left")
+
         combined.to_csv(self.results_path, index=False)
         logger.info(f"Saved evaluation results ({len(self.alphas)} alphas) → {self.results_path}")
         return self.results_path
@@ -395,7 +477,9 @@ class SweepResults:
             )
 
         df     = pd.read_csv(path, sep="\t", dtype={"query_id": str, "doc_id": str})
-        alphas = sorted(df["alpha"].unique())
+        raw_alphas = df["alpha"].unique()
+        # alpha column may be floats (top-alpha sweep) or a string (rdime single-shot)
+        alphas = sorted(raw_alphas, key=lambda a: (isinstance(a, str), a))
         data   = {
             alpha: df[df["alpha"] == alpha].reset_index(drop=True)
             for alpha in alphas
